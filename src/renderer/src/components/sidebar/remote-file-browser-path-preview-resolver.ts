@@ -107,7 +107,23 @@ export async function resolvePathInput({
   let currentPath = basePath
   try {
     for (const segment of parsed.committedSegments) {
-      const listing = await fetchListing(currentPath)
+      let listing: Awaited<ReturnType<FetchListing>>
+      try {
+        listing = await fetchListing(currentPath)
+      } catch {
+        if (gen !== previewGenRef.current) {
+          return
+        }
+        // A parent the host may enter but not list (e.g. mode --x) can still hold readable
+        // folders: take the segment as typed and let the final listing decide.
+        currentPath =
+          segment === '..'
+            ? parentPath(currentPath, pathFlavor)
+            : segment === '.'
+              ? currentPath
+              : joinPath(currentPath, segment, pathFlavor)
+        continue
+      }
       if (gen !== previewGenRef.current) {
         return
       }

@@ -1,6 +1,6 @@
 import { readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { isAbsolute, resolve } from 'node:path'
+import { isAbsolute, join, resolve } from 'node:path'
 import type { DirEntry, FilesystemPathFlavor } from '../../shared/filesystem-entry-types'
 import { sortDirEntries } from '../../shared/file-name-sort'
 import { probeGitAvailability } from '../git/git-availability'
@@ -39,13 +39,24 @@ export class RuntimeServerEnvironmentCommands {
       throw new Error(`${dirPath} is not a directory`)
     }
     const entries = await readdir(dirPath, { withFileTypes: true })
-    const mapped = entries
-      .filter((entry) => entry.name !== '.' && entry.name !== '..')
-      .map((entry) => ({
-        name: entry.name,
-        isDirectory: entry.isDirectory(),
-        isSymlink: entry.isSymbolicLink()
-      }))
+    const mapped = await Promise.all(
+      entries
+        .filter((entry) => entry.name !== '.' && entry.name !== '..')
+        .map(async (entry) => {
+          const isSymlink = entry.isSymbolicLink()
+          return {
+            name: entry.name,
+            // Follow links so a linked folder can be opened; broken links stay files.
+            isDirectory: isSymlink
+              ? await stat(join(dirPath, entry.name)).then(
+                  (target) => target.isDirectory(),
+                  () => false
+                )
+              : entry.isDirectory(),
+            isSymlink
+          }
+        })
+    )
     sortDirEntries(mapped)
     return {
       resolvedPath: dirPath,
